@@ -1,0 +1,153 @@
+---
+- name: VPN-srv
+  hosts: server
+  become: true
+
+  tasks:
+
+    - name: install packages
+      apt:
+        name:
+            - selinux-utils
+            - iperf3
+            - net-tools
+            - openvpn
+        state: present
+        update_cache: true
+    - name: keygen
+      command:
+        cmd: openvpn --genkey secret /etc/openvpn/server/static.key
+        creates: /etc/openvpn/server/static.key
+    - name: config
+      copy:
+        dest: /etc/openvpn/server/server.conf
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          dev tap
+          ifconfig 10.10.10.1 255.255.255.0
+          topology subnet
+          secret /etc/openvpn/server/static.key
+          comp-lzo
+          status /var/log/openvpn-status.log
+          log /var/log/openvpn.log
+          verb 3
+      notify: restart openvpn
+    - name: copy key
+      fetch:
+        src: /etc/openvpn/server/static.key
+        dest: ~/shared/static.key
+        flat: true
+    - name: server-unit
+      copy:
+        dest: /etc/systemd/system/openvpn@.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=OpenVPN Tunneling Application On %I
+          After=network.target
+          
+          [Service]
+          Type=notify
+          PrivateTmp=true
+          ExecStart=/usr/sbin/openvpn --cd /etc/openvpn/server/ --config %i.conf
+          
+          [Install]
+          WantedBy=multi-user.target
+      notify: reload systemd
+    - name: reload systemd
+      meta: flush_handlers
+    - name: enable and start openvpn@server
+      systemd_service:
+        name: openvpn@server
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart openvpn
+      service:
+        name: openvpn
+        state: restarted
+        enabled: true
+    - name: reload systemd
+      systemd_service:
+        daemon_reload: yes
+
+- name: VPN-cln
+  hosts: client
+  become: true
+
+  tasks:
+
+    - name: install packages
+      apt:
+        name:
+            - selinux-utils
+            - iperf3
+            - net-tools
+            - openvpn
+        state: present
+        update_cache: true
+    - name: config
+      copy:
+        dest: /etc/openvpn/client/client.conf
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          dev tap
+          remote 192.168.56.10
+          ifconfig 10.10.10.2 255.255.255.0
+          topology subnet
+          secret /etc/openvpn/client/static.key
+          comp-lzo
+          status /var/log/openvpn-status.log
+          log /var/log/openvpn.log
+          verb 3
+      notify: restart openvpn
+    - name: copy key
+      copy:
+        src: /home/vagrant/shared/static.key
+        dest: /etc/openvpn/client/static.key
+        owner: root
+        group: root
+        mode: '0600'
+    - name: server-unit
+      copy:
+        dest: /etc/systemd/system/openvpn@.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=OpenVPN Tunneling Application On %I
+          After=network.target
+          
+          [Service]
+          Type=notify
+          PrivateTmp=true
+          ExecStart=/usr/sbin/openvpn --cd /etc/openvpn/client/ --config %i.conf
+          
+          [Install]
+          WantedBy=multi-user.target
+      notify: reload systemd
+    - name: reload systemd
+      meta: flush_handlers
+    - name: enable and start openvpn@client
+      systemd_service:
+        name: openvpn@client
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart openvpn
+      service:
+        name: openvpn
+        state: restarted
+        enabled: true
+    - name: reload systemd
+      systemd_service:
+        daemon_reload: yes

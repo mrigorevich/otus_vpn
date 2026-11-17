@@ -1,0 +1,61 @@
+---
+- name: VPN-srv
+  hosts: server
+  become: true
+
+  tasks:
+
+    - name: config
+      copy:
+        dest: /etc/openvpn/server/server.conf
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          dev tun
+          ifconfig 10.10.10.1 255.255.255.0
+          topology subnet
+          secret /etc/openvpn/server/static.key
+          comp-lzo
+          status /var/log/openvpn-status.log
+          log /var/log/openvpn.log
+          verb 3
+      notify: restart openvpn
+
+  handlers:
+    - name: restart openvpn
+      service:
+        name: openvpn@server
+        state: restarted
+        enabled: true
+
+- name: VPN-cln
+  hosts: client
+  become: true
+
+  tasks:
+
+    - name: config
+      copy:
+        dest: /etc/openvpn/client/client.conf
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          dev tun
+          remote 192.168.56.10
+          ifconfig 10.10.10.2 255.255.255.0
+          topology subnet
+          secret /etc/openvpn/client/static.key
+          comp-lzo
+          status /var/log/openvpn-status.log
+          log /var/log/openvpn.log
+          verb 3
+      notify: restart openvpn
+
+  handlers:
+    - name: restart openvpn
+      service:
+        name: openvpn@client
+        state: restarted
+        enabled: true
